@@ -72,7 +72,12 @@ Every artifact edit resets consecutive clean passes to zero.
    Supply only the target, full Critic Contract and Review Criteria, instructions
    to read current artifacts, and access to relevant repository context.
    Do not supply prior reasoning, findings, verdicts, corrections, or an expected
-   outcome. Increment critic passes. Use the fallback below if unavailable.
+   outcome. Increment critic passes. When using `multi_agent_v1__wait_agent`, set
+   `timeout_ms` to `3600000` rather than relying on its 30-second default. A
+   `timed_out: true` result only means the wait ended; wait again on the same
+   still-running critic instead of treating it as failed or spawning a duplicate.
+   Use the fallback below only when the critic reaches a final failure state or
+   is unavailable.
 5. **Adjudicate.** Independently verify every critic finding for correctness,
    applicability, severity, and value. Record concise evidence for rejections.
    A valid human/external blocker stops the run. Accepted findings needing

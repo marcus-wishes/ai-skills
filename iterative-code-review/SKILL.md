@@ -1,8 +1,7 @@
 ---
 name: iterative-code-review
-description: Review uncommitted changes or a specified Git commit range as a senior engineer, architect, and QA engineer. Implement only clearly correct fixes, then repeat review and validation until no finding above low severity remains.
+description: Review uncommitted changes or a specified Git commit range as a senior engineer, architect, and QA engineer. Implement clearly correct, maintainable fixes and repeat validation with an independent critic until no finding above low severity remains.
 license: MIT
-compatibility: Cursor, OpenCode, Git repository required
 metadata:
     category: code-quality
     workflow: review-fix-verify
@@ -11,6 +10,7 @@ metadata:
 # Iterative Code Review
 
 Perform a rigorous, repository-aware code review and remediation cycle.
+Requires a Git repository; use the critic fallback when subagents are unavailable.
 
 ## Role
 
@@ -22,6 +22,11 @@ Act simultaneously as:
 
 Learn the repository's conventions before judging a change. Prefer project-local instructions and established patterns over generic preferences.
 
+Before reviewing, read [Implementor Protocol](references/implementor.md).
+The main agent owns implementation, validation, and adjudication. The critic
+independently reviews and returns findings; it never edits files. Use the user's
+current model and reasoning settings for both; override only on explicit request.
+
 ## Invocation and scope
 
 Determine the review target from the user's request.
@@ -30,7 +35,8 @@ Supported scopes:
 
 - `uncommitted`, `working tree`, or no explicit scope: review all uncommitted tracked and untracked changes relevant to the task
 - `last N commits`: review `HEAD~N..HEAD`
-- A Git revision or range, such as `abc123`, `main..HEAD`, or `v1.4.0..HEAD`: review that exact range
+- A single commit, such as `abc123`: review the changes introduced by that commit
+- A Git range, such as `main..HEAD` or `v1.4.0..HEAD`: review that exact range
 - A PR branch comparison: use the user-provided base and head revisions
 
 If scope is absent and the intent is unclear, ask this single question before changing anything:
@@ -38,6 +44,14 @@ If scope is absent and the intent is unclear, ask this single question before ch
 > Should I review the current uncommitted working tree or a specific commit range?
 
 Never silently broaden the selected scope.
+
+Resolve revisions to immutable commit IDs. Record initial working-tree changes
+so unrelated pre-existing edits are not mistaken for session fixes. If the
+selected head is not checked out, use an isolated checkout for remediation;
+do not apply historical fixes to an unrelated working tree.
+For a single commit, compare with its parent (the empty tree for a root commit).
+For a merge commit, use its first parent unless the user specifies otherwise;
+state that choice in the scope report.
 
 ## Safety and authority
 
@@ -112,115 +126,82 @@ Assign a severity to each finding:
 
 Only Critical, High, and Medium findings block completion.
 
-## Fix policy
-
-For every finding above Low severity:
-
-1. Decide whether the correct resolution is **unambiguous** from the codebase, tests, documentation, and selected diff.
-2. If it is unambiguous, implement the smallest correct fix.
-3. Add or update focused tests when they are necessary and their expected behavior is unambiguous.
-4. Run the narrowest relevant formatter, linter, type checker, build, and tests.
-5. If a command fails due to an existing unrelated issue, do not fix it unless it is clearly caused by the selected changes. Report it separately.
-
-A fix is unambiguous only if all of the following are true:
-
-- The intended behavior is established by existing code, tests, documentation, types, contracts, or explicit user instructions
-- The fix does not introduce a new product or architectural decision
-- The change is minimal and has no reasonable competing implementation with materially different behavior
-- You can validate it with existing or clearly implied tests/checks
-
-## Decisions requiring user input
-
-When a finding cannot be resolved without a product, architectural, compatibility,
-security, compliance, data, or performance decision, enter a **blocked decision
-state**. This is a temporary pause in the review-fix loop, not completion of the task.
-
-Before asking:
-
-1. Continue reviewing all other selected changes and implement every independent,
-   unambiguous Critical, High, or Medium fix.
-2. Do not make changes whose correctness depends on the unresolved decision.
-3. Do not report final completion while any finding above Low remains blocked.
-
-Ask one concise decision question at a time. Include:
-
-- Finding ID, severity, and affected file(s)
-- Evidence and why this needs a decision
-- Viable options and their trade-offs
-- A clearly labelled recommendation
-- The exact answer required to proceed
-
-End the message with:
-
-> **Review status: PAUSED — awaiting decision(s).**
-> After you answer, I must resume this same iterative review-fix loop automatically.
-> I must not treat the answer as task completion.
-
-## Resumption protocol
-
-When the user replies while the review status is `PAUSED`:
-
-1. Treat the reply as an answer to the pending decision(s), unless the user
-   explicitly changes scope or starts a different task.
-2. Re-read the pending finding(s), the user's answer, the current Git diff,
-   and any affected files that may have changed since the question was asked.
-3. Record the decision and apply the smallest implementation consistent with it.
-4. Add or update focused tests when their expected behavior is now unambiguous.
-5. Run the relevant formatter, linter, type checker, build, and tests.
-6. Resume the review-fix loop from the current working tree.
-7. Continue until no Critical, High, or Medium findings remain, or until another
-   genuinely independent decision is required.
-
-Never require the user to invoke this skill again after answering a pending question.
-Never conclude, provide a final report, or say that the review is complete immediately
-after receiving an answer. A user answer always returns the workflow to the
-`REVIEWING` state.
-
 ## Review-fix loop
 
-Maintain one of these workflow states:
+Track state (`REVIEWING`, `FIXING`, `VALIDATING`, `CRITIQUING`, `PAUSED`,
+`COMPLETE`, or `NOT CONVERGED`), cycles, critic passes, consecutive agreed CLEAN
+passes, outstanding findings, and validation results. Keep only concise evidence
+and decisions in the main context; do not retain full critic transcripts.
 
-- `REVIEWING`: inspect the selected scope and identify findings
-- `FIXING`: implement unambiguous fixes
-- `VALIDATING`: run relevant checks and inspect resulting changes
-- `PAUSED`: awaiting a user decision for one or more blocked findings
-- `COMPLETE`: no Critical, High, or Medium findings remain
+Default limit: six cycles unless the user specifies otherwise. Check the limit
+before each new cycle. Resuming PAUSED continues the active cycle with its
+existing validation-attempt count; do not increment cycles merely for resuming.
+Exhaustion when a new cycle is needed, or repeated disagreement, stops as
+`NOT CONVERGED`, never `COMPLETE`. A user decision does not reset counters;
+if exhausted, report the need for an extended budget to continue.
 
-State transitions:
+1. **Review.** Increment cycles. Inspect the full selected scope and relevant
+   context, including all fixes made during this invocation. For a commit range,
+   retain the original base/head and include subsequent remediation changes;
+   for uncommitted scope, include relevant tracked and untracked files. Capture
+   a content snapshot before review; refresh it and re-review after any edits.
+2. **Fix.** Apply all independent, unambiguous findings above Low severity using
+   the Implementor Protocol. Handle unresolved decisions through its PAUSED protocol.
+3. **Validate.** Run relevant checks and inspect the resulting changes. Re-review
+   corrections before requesting a critic. Disclose unavailable checks and
+   unrelated failures; never describe failed or unexecuted checks as passed.
+   Reuse successful results when reviewed content and relevant environment are
+   unchanged; repeat checks only after changes or new evidence warrants it.
+   Validation failures caused by selected changes block completion. Limit
+   validation rounds to three per cycle, including critic-driven fixes;
+   if still failing or further validation is needed, begin the next budgeted
+   cycle. Never use an inner retry loop to bypass the cycle limit.
+4. **Critique.** Read [Critic Contract](references/critic.md). Create one fresh,
+   history-free subagent per pass (for example, `fork_turns="none"`). Supply only
+   the repository path, resolved scope/base/head, initial working-tree baseline
+   and session diff (including added/deleted files) or paths to those snapshots,
+   applicable user constraints and decisions, and absolute paths to this skill
+   and the contract. Have it read current files and relevant repository guidance.
+   Do not supply prior reasoning, findings, verdicts, or expected outcomes.
+   Use read-only tool restrictions where supported. Increment critic passes. When
+   using `multi_agent_v1__wait_agent`, set `timeout_ms` to `3600000` rather than
+   relying on its 30-second default. A `timed_out: true` result only means the
+   wait ended; wait again on the same still-running critic instead of treating it
+   as failed or spawning a duplicate. Only a final failure state makes critic
+   output unavailable.
+   Compare the reviewed content snapshot after the pass; concurrent changes
+   invalidate its verdict and reset clean passes.
+5. **Adjudicate.** Independently verify each critic finding against repository
+   evidence and the severity definitions. Implement accepted unambiguous fixes,
+   validate them within the cycle budget, and begin a new cycle. Route accepted
+   findings needing a user decision through the Implementor Protocol. Record
+   concise evidence for rejections; rejection cannot turn a non-CLEAN verdict
+   into CLEAN. Missing, malformed, or
+   failed critic output resets clean passes; retry in the next cycle.
+6. **Check convergence.** Only a CLEAN verdict with main-agent agreement counts.
+   Every edit or relevant context change resets clean passes. After the first
+   CLEAN, run a complete new review and fresh critic pass. Use content snapshots
+   or hashes, including added/deleted/untracked files, to confirm both passes
+   cover unchanged reviewed content. Any other verdict resets clean passes.
+7. **Finish or repeat.** Enter `COMPLETE` only after two consecutive agreed CLEAN
+   passes, no remaining Critical/High/Medium findings or pending decisions, and
+   validation of all fixes as far as available tooling permits. Otherwise repeat.
+   The same rejected material finding in two consecutive cycles, or a correction
+   reversed and then proposed again, stops as `NOT CONVERGED`; report the dispute.
 
-1. Start in `REVIEWING`.
-2. If unambiguous findings above Low exist, move to `FIXING`.
-3. After changes, move to `VALIDATING`.
-4. After validation, return to `REVIEWING`.
-5. If a decision is required, move to `PAUSED`.
-6. After the user answers, move from `PAUSED` to `FIXING` or `REVIEWING`,
-   then continue the loop.
-7. Move to `COMPLETE` only when:
-    - No Critical, High, or Medium findings remain;
-    - All automatic fixes have been validated as far as available tooling permits; and
-    - No decision is pending.
+If isolated contexts are unavailable, perform the Critic Contract as a separate
+read-only phase and disclose reduced independence. A history-inheriting child
+does not count as isolated. Apply the same verdicts, counters, and completion gate.
 
-Do not downgrade, defer, or omit findings merely to reach `COMPLETE`.
-
-## Review-fix loop
-
-Repeat the following loop:
-
-1. Inspect the current selected diff and relevant context.
-2. Record all findings above Low severity.
-3. If there are none, proceed to final verification.
-4. Implement only unambiguous fixes.
-5. Validate the fixes with the most relevant available checks.
-6. Re-inspect the resulting diff, including changes made during this session.
-7. Repeat until no Critical, High, or Medium findings remain.
-
-Do not stop merely because the first pass is complete. Do not lower severity to avoid resolving a finding.
-
-If validation cannot run, state exactly which command could not run, why, and what remains unverified.
+Do not downgrade, defer, or omit findings to reach completion. If validation
+cannot run, report the exact command, reason, and remaining uncertainty.
 
 ## Final response
 
 Provide a concise review report with these sections:
+
+Lead with outcome (`COMPLETE`, `PAUSED`, or `NOT CONVERGED`), cycle/critic/clean
+counts, and whether critics were isolated or used the fallback.
 
 ### Scope
 
@@ -240,8 +221,10 @@ Provide a concise review report with these sections:
 
 ### Remaining findings
 
-- State: `No findings above low severity remain`
-- Or list unresolved findings, their severity, why user input is required, and the options
+- State `No findings above low severity remain` only when supported; this alone
+  does not imply COMPLETE if the critic gate remains unmet
+- Otherwise list unresolved findings, severity, pending decisions or disagreement,
+  and the stopping reason
 
 ### Low-severity notes
 
