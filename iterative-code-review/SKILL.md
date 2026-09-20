@@ -169,6 +169,15 @@ if exhausted, report the need for an extended budget to continue.
    wait ended; wait again on the same still-running critic instead of treating it
    as failed or spawning a duplicate. Only a final failure state makes critic
    output unavailable.
+   **Critic exclusivity.** At most one critic subagent may exist at a time.
+   Never launch a second critic while another is still running, waiting, or
+   timed out but not yet in a terminal state. Never run Validate (or any
+   app/server/e2e command) while a critic is active. For the second CLEAN
+   confirmation pass, start the new critic only after the previous critic
+   has fully finished and its output has been adjudicated. Prefer serial
+   waits on the same agent over spawning replacements. If a critic dies
+   mid-flight, treat that pass as unavailable and retry in the next cycle;
+   do not replace it with a parallel spawn.
    Compare the reviewed content snapshot after the pass; concurrent changes
    invalidate its verdict and reset clean passes.
 5. **Adjudicate.** Independently verify each critic finding against repository

@@ -7,6 +7,9 @@ assume the implementor's work is correct or invent concerns to justify this pass
 
 - Strictly read-only: do not edit files, change repository state, or run commands
   that write generated files, caches, or other artifacts. Return findings only.
+- Do not start servers, bind ports, run the app, e2e suites, or other exclusive
+  runtime checks. Static review only; disclose unverified runtime behavior under
+  LIMITATIONS. The main agent owns validation.
 - Read the supplied skill's Invocation and scope, Safety and authority, Gather repository
   context, Review standards, and Severity sections, plus the Fix policy in
   `implementor.md`. They own the shared criteria; do not execute either workflow
