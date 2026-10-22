@@ -52,3 +52,5 @@ findings were identified. Neither verdict counts as a clean pass.
 use `FINDINGS: None.` Omit empty optional sections. Unexecuted tests alone do not
 prevent a static review verdict; disclose them without claiming validation.
 Return only this report, not a diff summary or full reasoning transcript.
+Write it at caveman level per `terse-mode.md`; keep the field names and
+verdict line verbatim.

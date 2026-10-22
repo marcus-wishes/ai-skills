@@ -26,6 +26,8 @@ Before reviewing, read [Implementor Protocol](references/implementor.md).
 The main agent owns implementation, validation, and adjudication. The critic
 independently reviews and returns findings; it never edits files. Use the user's
 current model and reasoning settings for both; override only on explicit request.
+Read [Terse Mode](references/terse-mode.md); apply it to reasoning, subagent
+prompts and reports, and status notes, never to code, docs, or commits.
 
 ## Invocation and scope
 
@@ -129,7 +131,7 @@ Only Critical, High, and Medium findings block completion.
 ## Review-fix loop
 
 Track state (`REVIEWING`, `FIXING`, `VALIDATING`, `CRITIQUING`, `PAUSED`,
-`COMPLETE`, or `NOT CONVERGED`), cycles, critic passes, consecutive agreed CLEAN
+`COMPLETE`, or `NOT CONVERGED`), cycles, critic passes, agreed CLEAN
 passes, outstanding findings, and validation results. Keep only concise evidence
 and decisions in the main context; do not retain full critic transcripts.
 
@@ -168,13 +170,14 @@ if exhausted, report the need for an extended budget to continue.
    relying on its 30-second default. A `timed_out: true` result only means the
    wait ended; wait again on the same still-running critic instead of treating it
    as failed or spawning a duplicate. Only a final failure state makes critic
-   output unavailable.
+   output unavailable. Also supply the absolute path to `references/terse-mode.md`
+   and tell the critic to report in caveman level.
    **Critic exclusivity.** At most one critic subagent may exist at a time.
    Never launch a second critic while another is still running, waiting, or
    timed out but not yet in a terminal state. Never run Validate (or any
-   app/server/e2e command) while a critic is active. For the second CLEAN
-   confirmation pass, start the new critic only after the previous critic
-   has fully finished and its output has been adjudicated. Prefer serial
+   app/server/e2e command) while a critic is active. Start each new critic only
+   after the previous critic has fully finished and its output has been
+   adjudicated. Prefer serial
    waits on the same agent over spawning replacements. If a critic dies
    mid-flight, treat that pass as unavailable and retry in the next cycle;
    do not replace it with a parallel spawn.
@@ -188,12 +191,12 @@ if exhausted, report the need for an extended budget to continue.
    into CLEAN. Missing, malformed, or
    failed critic output resets clean passes; retry in the next cycle.
 6. **Check convergence.** Only a CLEAN verdict with main-agent agreement counts.
-   Every edit or relevant context change resets clean passes. After the first
-   CLEAN, run a complete new review and fresh critic pass. Use content snapshots
-   or hashes, including added/deleted/untracked files, to confirm both passes
-   cover unchanged reviewed content. Any other verdict resets clean passes.
-7. **Finish or repeat.** Enter `COMPLETE` only after two consecutive agreed CLEAN
-   passes, no remaining Critical/High/Medium findings or pending decisions, and
+   Every edit or relevant context change invalidates it. Use content snapshots
+   or hashes, including added/deleted/untracked files, to confirm the CLEAN
+   pass covers the final content. Do not re-run an identical pass on unchanged
+   content. Any other verdict is not clean.
+7. **Finish or repeat.** Enter `COMPLETE` only after one agreed CLEAN pass on
+   the final content, no remaining Critical/High/Medium findings or pending decisions, and
    validation of all fixes as far as available tooling permits. Otherwise repeat.
    The same rejected material finding in two consecutive cycles, or a correction
    reversed and then proposed again, stops as `NOT CONVERGED`; report the dispute.
@@ -207,7 +210,7 @@ cannot run, report the exact command, reason, and remaining uncertainty.
 
 ## Final response
 
-Provide a concise review report with these sections:
+Provide a concise review report in caveman level (see Terse Mode) with these sections:
 
 Lead with outcome (`COMPLETE`, `PAUSED`, or `NOT CONVERGED`), cycle/critic/clean
 counts, and whether critics were isolated or used the fallback.
