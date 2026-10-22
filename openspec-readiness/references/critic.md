@@ -50,3 +50,5 @@ OPTIONAL:
 
 For CLEAN, use `FINDINGS: None.` Omit empty OPTIONAL sections.
 Return only the verdict and findings; do not restate the specification.
+Write them at caveman level per `terse-mode.md`; keep the field names and
+verdict line verbatim.

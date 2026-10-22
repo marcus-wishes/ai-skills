@@ -30,16 +30,19 @@ the fallback. Review Criteria owns the severity definitions.
 
 Use the user's current model and reasoning configuration. Inherit these for
 critics; override only at the user's explicit request.
+Read [Terse Mode](references/terse-mode.md); apply it to reasoning, critic
+prompts and reports, and status notes. Spec artifacts stay normal prose, and
+the final report to the user uses caveman level.
 
 ## State and limits
 
-Track review cycles, critic passes, consecutive clean passes, changed artifacts,
+Track review cycles, critic passes, clean passes, changed artifacts,
 validation status, and outstanding findings. Start counters at zero.
 Default limit: six review cycles per invocation, unless the user
 specifies otherwise. Reaching the limit never implies readiness.
 Before starting any new cycle, enforce this limit and stop NOT CONVERGED if
 exhausted, including when an earlier step directs a restart.
-Every artifact edit resets consecutive clean passes to zero.
+Every artifact edit resets clean passes to zero.
 
 ## Review loop
 
@@ -71,6 +74,7 @@ Every artifact edit resets consecutive clean passes to zero.
    inherited conversation history (e.g. `fork_turns="none"` where supported).
    Supply only the target, full Critic Contract and Review Criteria, instructions
    to read current artifacts, and access to relevant repository context.
+   Include Terse Mode and instruct it to report in caveman level.
    Do not supply prior reasoning, findings, verdicts, corrections, or an expected
    outcome. Increment critic passes. When using `multi_agent_v1__wait_agent`, set
    `timeout_ms` to `3600000` rather than relying on its 30-second default. A
@@ -90,9 +94,9 @@ Every artifact edit resets consecutive clean passes to zero.
 6. **Count CLEAN.** Only `VERDICT: CLEAN` with independent architect agreement
    increments clean passes. Any other result resets the count. If the architect
    finds a material issue despite CLEAN, handle it under step 2 and begin another
-   cycle. After the first CLEAN, run another full architect and fresh critic pass.
-7. **Finish or repeat.** After two consecutive agreed CLEAN verdicts, verify the
-   readiness gate. Otherwise repeat unless the cycle limit is reached or reviews
+   cycle. Do not re-run an identical pass on unchanged artifacts.
+7. **Finish or repeat.** After one agreed CLEAN verdict on the final artifacts,
+   verify the readiness gate. Otherwise repeat unless the cycle limit is reached or reviews
    are oscillating. Stop NOT CONVERGED for repeated disagreement, oscillation,
    or exhausted cycles without a genuine blocker. Use BLOCKED only for a concrete
    missing decision, fact, access, or external dependency. Preserve outstanding
@@ -103,8 +107,8 @@ correction reversed and then proposed again, as repeated disagreement or
 oscillation respectively.
 
 Track every artifact edit, including validation and critic-driven corrections.
-Use a content snapshot or hashes to confirm the final two CLEAN reviews cover
-unchanged target artifacts, including added/deleted files. Relevant repository
+Use a content snapshot or hashes to confirm the CLEAN review covers the
+final target artifacts, including added/deleted files. Relevant repository
 changes that invalidate review evidence also reset clean passes.
 
 ## Critic fallback
@@ -120,8 +124,8 @@ count as an isolated critic.
 Declare IMPLEMENTATION READY only when:
 
 - No valid BLOCKER, REQUIRED, or RECOMMENDED findings remain.
-- The implementation plan is complete and the architect agrees with two
-  consecutive CLEAN critic verdicts on unchanged artifacts.
+- The implementation plan is complete and the architect agrees with a CLEAN
+  critic verdict on the final artifacts.
 - Validation passed, or tooling was absent and that limitation is disclosed.
 - Critics used fresh history-free contexts where supported; otherwise disclose
   the fallback.
@@ -134,7 +138,7 @@ OPTIONAL findings do not prevent readiness.
 Keep concise. Include:
 
 - Outcome: IMPLEMENTATION READY, BLOCKED, or NOT CONVERGED.
-- Target; review cycles; critic passes; consecutive CLEAN passes.
+- Target; review cycles; critic passes; CLEAN passes.
 - Artifacts changed and material architectural improvements, if any.
 - Validation: PASSED, NOT AVAILABLE, FAILED, ERROR, or NOT RUN if stopped early;
   include the command and any failure or limitation.
