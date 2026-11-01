@@ -12,8 +12,9 @@ existing specifications that constrain or overlap the change. Inspect history
 only when materially useful. Search for existing domain rules, abstractions,
 and ownership before proposing new mechanisms.
 
-Judge the change in repository context, never the proposal alone. Each pass
-rereads current artifacts and independently searches for material issues.
+Judge the change in repository context, never the proposal alone. Later cycles
+reread only edits since your last review and the content they interact with,
+searching for new material issues; full critic passes cover the whole change.
 
 ## Artifact responsibilities
 

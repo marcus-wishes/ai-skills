@@ -14,38 +14,68 @@ Requires a Git repository; use the critic fallback when subagents are unavailabl
 
 ## Role
 
-Act simultaneously as:
+Act simultaneously as a senior software engineer in the project's languages and
+ecosystem, a senior system architect (boundaries, dependencies, contracts,
+evolution, reliability, security, operations), and a senior QA engineer
+(correctness, regressions, edge cases, coverage, determinism, failure modes).
+Treat overengineering as a first-class review target, in the original changes
+and in your own fixes.
 
-- A senior software engineer experienced in the project's primary language(s) and ecosystem
-- A senior system architect focused on boundaries, dependencies, contracts, evolution, reliability, security, and operational behavior
-- A senior QA engineer focused on correctness, regressions, edge cases, test coverage, deterministic behavior, and failure modes
-
-Learn the repository's conventions before judging a change. Prefer project-local instructions and established patterns over generic preferences.
-
-Before reviewing, read [Implementor Protocol](references/implementor.md).
-The main agent owns implementation, validation, and adjudication. The critic
-independently reviews and returns findings; it never edits files. Use the user's
-current model and reasoning settings for both; override only on explicit request.
+Read [Review Standards](references/review-standards.md) (safety, review areas,
+severity, fix policy) and [Implementor Protocol](references/implementor.md)
+before reviewing. The main agent owns implementation decisions, validation, and
+adjudication; it may delegate fully specified edits per the Implementor
+Protocol. The critic independently reviews and returns findings; it never edits.
 Read [Terse Mode](references/terse-mode.md); apply it to reasoning, subagent
 prompts and reports, and status notes, never to code, docs, or commits.
 
+## Subagent models
+
+The main agent keeps the user's model and reasoning settings. For each subagent
+it chooses the cheapest model tier and reasoning effort adequate to the task,
+unless the user specifies otherwise. Tiers are provider-neutral; map them to
+the harness's model families:
+
+| Tier | Claude | OpenAI |
+| --- | --- | --- |
+| Large | Opus | Sol |
+| Mid | Sonnet | Terra |
+| Small | Haiku | Luna |
+
+Use the harness's family alias (for example `sonnet` in Claude Code), never a
+versioned model ID, so the latest release is always used. If the harness offers
+no model or effort selection, or no model of the needed tier, inherit the caller's.
+
+- **Full critic pass:** default one tier below the main agent at high effort,
+  never below the mid tier. Use the main agent's tier when the scope touches
+  security, authorization, concurrency, data integrity, migrations, or public
+  contracts, or after a critic pass that was malformed or whose findings
+  adjudication rejected as wrong.
+- **Delta critic pass:** small tier at high effort suffices.
+- **Delegated implementor:** see the Implementor Protocol.
+
+A cheaper critic never relaxes verdicts or the completion gate.
+
+Every time a subagent is spawned, state in a status line to the user its role,
+model family, exact version, and reasoning effort, for example
+`Spawning critic (full pass): Claude Sonnet 5.5 (claude-sonnet-5-5), effort high`.
+Take the version from what the harness reports or resolves for the alias; if it
+cannot be determined, say `latest (unresolved)` rather than guessing. Record
+the same for the final report.
+
 ## Invocation and scope
 
-Determine the review target from the user's request.
+Determine the review target from the user's request:
 
-Supported scopes:
-
-- `uncommitted`, `working tree`, or no explicit scope: review all uncommitted tracked and untracked changes relevant to the task
-- `last N commits`: review `HEAD~N..HEAD`
-- A single commit, such as `abc123`: review the changes introduced by that commit
-- A Git range, such as `main..HEAD` or `v1.4.0..HEAD`: review that exact range
-- A PR branch comparison: use the user-provided base and head revisions
+- `uncommitted`, `working tree`, or no explicit scope: all uncommitted tracked and untracked changes relevant to the task
+- `last N commits`: `HEAD~N..HEAD`
+- A single commit, such as `abc123`: the changes introduced by that commit
+- A Git range, such as `main..HEAD` or `v1.4.0..HEAD`: that exact range
+- A PR branch comparison: the user-provided base and head revisions
 
 If scope is absent and the intent is unclear, ask this single question before changing anything:
 
 > Should I review the current uncommitted working tree or a specific commit range?
-
-Never silently broaden the selected scope.
 
 Resolve revisions to immutable commit IDs. Record initial working-tree changes
 so unrelated pre-existing edits are not mistaken for session fixes. If the
@@ -55,151 +85,91 @@ For a single commit, compare with its parent (the empty tree for a root commit).
 For a merge commit, use its first parent unless the user specifies otherwise;
 state that choice in the scope report.
 
-## Safety and authority
-
-- Do not discard, reset, stash, overwrite, or revert user changes.
-- Do not amend commits, create commits, push branches, open pull requests, alter Git configuration, or change CI/CD configuration unless explicitly requested.
-- Do not change lockfiles, generated files, snapshots, vendored code, migrations, public APIs, deployment configuration, or dependencies unless the required change is clearly necessary and within the requested scope.
-- Do not make speculative changes.
-- Do not invent business rules, API semantics, security requirements, compatibility guarantees, performance targets, or product decisions.
-- Preserve backward compatibility unless the selected changes or documented project policy explicitly require breaking it.
-- Keep changes narrowly scoped. Do not perform opportunistic refactors.
-
 ## Gather repository context
 
-Before reviewing, inspect only what is needed to understand the selected changes:
+Inspect only what is needed to understand the selected changes:
 
-1. Read applicable repository guidance, including `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, README files, architecture documentation, and nested instruction files.
-2. Identify the primary language, package/build system, formatter, linter, type checker, test commands, and CI commands.
-3. Inspect the selected Git diff, affected files, and directly relevant call sites, tests, interfaces, schemas, configuration, and documentation.
-4. Use language-server diagnostics where available.
-5. Treat existing repository conventions as the default style unless they conflict with correctness, safety, or explicit instructions.
+1. Applicable guidance: `AGENTS.md`, `CLAUDE.md`, `CONTRIBUTING.md`, README files, architecture docs, nested instruction files.
+2. Primary language, build system, formatter, linter, type checker, test and CI commands.
+3. The selected diff, affected files, and directly relevant call sites, tests, interfaces, schemas, configuration, and docs.
+4. Language-server diagnostics where available.
 
-Do not claim to have inspected files, executed commands, or verified behavior that you did not actually inspect, execute, or verify.
+Then write a **context file** outside the repository (for example in a temp or
+scratch directory) so critics need not rediscover it: repository path, resolved
+scope/base/head, initial working-tree baseline, guidance file paths, validation
+commands, and relevant files and callers. Facts only — never findings,
+opinions, or expected outcomes. Update it when scope facts change.
 
-## Review standards
-
-Review the changes for the following areas.
-
-### Correctness and regression risk
-
-- Incorrect logic, edge cases, nullability, error handling, concurrency, data loss, resource lifecycle, and incorrect assumptions
-- Broken contracts between modules, API clients, databases, files, queues, or external services
-- Backward-compatibility regressions
-- Missing validation at trust boundaries
-- Incomplete updates when a data model, interface, configuration field, or API contract changes
-
-### Architecture and maintainability
-
-- Separation of concerns and appropriate module boundaries
-- Excessive coupling, dependency direction violations, circular dependencies, and leaky abstractions
-- Naming, cohesion, readability, and future extensibility
-- Unnecessary complexity and inappropriate abstractions
-- DRY violations that create divergent behavior or materially increase maintenance cost
-- KISS violations: avoid proposing abstraction solely because duplicated code exists; duplication is acceptable when it is clearer and unlikely to evolve together
-
-### Documentation
-
-- Missing or stale documentation for externally observable behavior, public APIs, configuration, deployment, non-obvious constraints, and surprising decisions
-- Comments that merely restate code are not useful and should not be added
-- Prefer clear code and appropriately scoped documentation over extensive inline commentary
-
-### QA and verification
-
-- Missing or insufficient tests for changed behavior, especially boundaries and failure modes
-- Flaky tests, weak assertions, tests that only verify implementation details, or incorrect test isolation
-- Missing updates to fixtures, mocks, contracts, snapshots, and test data
-- Lint, formatting, type, build, and test failures caused by the selected changes
-
-### Security and operations
-
-- Secrets exposure, unsafe input handling, injection paths, insecure defaults, authorization mistakes, sensitive-data logging, and unsafe deserialization
-- Failure behavior, observability, configuration validation, and retry/idempotency concerns where relevant
-
-## Severity
-
-Assign a severity to each finding:
-
-- **Critical**: likely security vulnerability, data loss/corruption, outage, serious authorization failure, or severe regression
-- **High**: clear functional defect, compatibility break, or major reliability issue likely to affect users or production
-- **Medium**: meaningful maintainability, testability, documentation, robustness, or design issue that should be addressed before merging
-- **Low**: minor clarity, style, or localized improvement with little practical risk
-- **Info**: observation or optional improvement; do not treat as a finding requiring resolution
-
-Only Critical, High, and Medium findings block completion.
+Do not claim to have inspected files, executed commands, or verified behavior
+that you did not actually inspect, execute, or verify.
 
 ## Review-fix loop
 
 Track state (`REVIEWING`, `FIXING`, `VALIDATING`, `CRITIQUING`, `PAUSED`,
-`COMPLETE`, or `NOT CONVERGED`), cycles, critic passes, agreed CLEAN
-passes, outstanding findings, and validation results. Keep only concise evidence
-and decisions in the main context; do not retain full critic transcripts.
+`COMPLETE`, or `NOT CONVERGED`), cycles, critic passes (full/delta), outstanding
+findings, validation results, and whether an agreed CLEAN pass covers the
+current content snapshot. Every edit or relevant context change clears that
+coverage unless a delta pass restores it. Keep only concise evidence and
+decisions in the main context; do not retain full critic transcripts.
 
 Default limit: six cycles unless the user specifies otherwise. Check the limit
 before each new cycle. Resuming PAUSED continues the active cycle with its
-existing validation-attempt count; do not increment cycles merely for resuming.
-Exhaustion when a new cycle is needed, or repeated disagreement, stops as
-`NOT CONVERGED`, never `COMPLETE`. A user decision does not reset counters;
-if exhausted, report the need for an extended budget to continue.
+existing validation-attempt count. Exhaustion when a new cycle is needed, or
+repeated disagreement, stops as `NOT CONVERGED`, never `COMPLETE`. A user
+decision does not reset counters; if exhausted, report the need for an extended
+budget to continue.
 
-1. **Review.** Increment cycles. Inspect the full selected scope and relevant
-   context, including all fixes made during this invocation. For a commit range,
-   retain the original base/head and include subsequent remediation changes;
-   for uncommitted scope, include relevant tracked and untracked files. Capture
-   a content snapshot before review; refresh it and re-review after any edits.
-2. **Fix.** Apply all independent, unambiguous findings above Low severity using
-   the Implementor Protocol. Handle unresolved decisions through its PAUSED protocol.
-3. **Validate.** Run relevant checks and inspect the resulting changes. Re-review
-   corrections before requesting a critic. Disclose unavailable checks and
-   unrelated failures; never describe failed or unexecuted checks as passed.
-   Reuse successful results when reviewed content and relevant environment are
-   unchanged; repeat checks only after changes or new evidence warrants it.
-   Validation failures caused by selected changes block completion. Limit
-   validation rounds to three per cycle, including critic-driven fixes;
-   if still failing or further validation is needed, begin the next budgeted
-   cycle. Never use an inner retry loop to bypass the cycle limit.
-4. **Critique.** Read [Critic Contract](references/critic.md). Create one fresh,
-   history-free subagent per pass (for example, `fork_turns="none"`). Supply only
-   the repository path, resolved scope/base/head, initial working-tree baseline
-   and session diff (including added/deleted files) or paths to those snapshots,
-   applicable user constraints and decisions, and absolute paths to this skill
-   and the contract. Have it read current files and relevant repository guidance.
-   Do not supply prior reasoning, findings, verdicts, or expected outcomes.
-   Use read-only tool restrictions where supported. Increment critic passes. When
-   using `multi_agent_v1__wait_agent`, set `timeout_ms` to `3600000` rather than
-   relying on its 30-second default. A `timed_out: true` result only means the
-   wait ended; wait again on the same still-running critic instead of treating it
-   as failed or spawning a duplicate. Only a final failure state makes critic
-   output unavailable. Also supply the absolute path to `references/terse-mode.md`
-   and tell the critic to report in caveman level.
-   **Critic exclusivity.** At most one critic subagent may exist at a time.
-   Never launch a second critic while another is still running, waiting, or
-   timed out but not yet in a terminal state. Never run Validate (or any
-   app/server/e2e command) while a critic is active. Start each new critic only
-   after the previous critic has fully finished and its output has been
-   adjudicated. Prefer serial
-   waits on the same agent over spawning replacements. If a critic dies
-   mid-flight, treat that pass as unavailable and retry in the next cycle;
-   do not replace it with a parallel spawn.
-   Compare the reviewed content snapshot after the pass; concurrent changes
-   invalidate its verdict and reset clean passes.
-5. **Adjudicate.** Independently verify each critic finding against repository
-   evidence and the severity definitions. Implement accepted unambiguous fixes,
-   validate them within the cycle budget, and begin a new cycle. Route accepted
-   findings needing a user decision through the Implementor Protocol. Record
-   concise evidence for rejections; rejection cannot turn a non-CLEAN verdict
-   into CLEAN. Missing, malformed, or
-   failed critic output resets clean passes; retry in the next cycle.
-6. **Check convergence.** Only a CLEAN verdict with main-agent agreement counts.
-   Every edit or relevant context change invalidates it. Use content snapshots
-   or hashes, including added/deleted/untracked files, to confirm the CLEAN
-   pass covers the final content. Do not re-run an identical pass on unchanged
-   content. Any other verdict is not clean.
-7. **Finish or repeat.** Enter `COMPLETE` only after one agreed CLEAN pass on
-   the final content, no remaining Critical/High/Medium findings or pending decisions, and
-   validation of all fixes as far as available tooling permits. Otherwise repeat.
-   The same rejected material finding in two consecutive cycles, or a correction
-   reversed and then proposed again, stops as `NOT CONVERGED`; report the dispute.
+**Trivial fix:** a localized edit in one file that changes no interface,
+contract, persisted data, or control flow beyond the finding's direct site, and
+does not touch security, authorization, concurrency, or data-integrity logic
+(for example a missing null check, wrong constant, typo, assertion fix, or doc
+correction). When unsure, it is not trivial.
+
+1. **Review.** Increment cycles. First cycle: inspect the full selected scope
+   and relevant context. Later cycles: inspect only edits since your last
+   review, their direct callers and tests, and the latest critic findings; full
+   critic passes cover the whole scope. Capture a content snapshot before review.
+2. **Fix.** Apply all independent, unambiguous findings above Low using the
+   Implementor Protocol. Handle unresolved decisions through its PAUSED protocol.
+3. **Validate.** Run relevant checks and inspect the resulting changes. Disclose
+   unavailable checks and unrelated failures; never describe failed or
+   unexecuted checks as passed. Reuse successful results when content and
+   environment are unchanged. Validation failures caused by selected changes
+   block completion. At most three validation rounds per cycle, including
+   critic-driven fixes; if more are needed, begin the next budgeted cycle.
+4. **Critique.** Read [Critic Contract](references/critic.md). Choose the pass type:
+   - **Delta pass** when the previous full pass returned `CHANGES_REQUIRED`,
+     none of its material findings was rejected, and every edit since that full
+     pass is trivial. Scope: those edits plus direct callers and tests.
+   - **Full pass** otherwise.
+
+   Create one fresh, history-free subagent (for example `fork_turns="none"`)
+   with read-only tools where supported. Supply only: pass type, absolute paths
+   to the context file, `references/review-standards.md`, `references/critic.md`,
+   and `references/terse-mode.md`, the session diff or a snapshot path (delta
+   pass: only edits since the last full pass), and applicable user constraints
+   and decisions. Never supply prior reasoning, findings, verdicts, or expected
+   outcomes. Increment critic passes.
+
+   Exactly one critic at a time; run no other critic, delegated implementor,
+   validation, or app/server/e2e command while it is active. If a wait times out
+   (for `multi_agent_v1__wait_agent`, set `timeout_ms` to `3600000`), wait again
+   on the same critic; only a final failure state makes its output unavailable,
+   and that pass is retried next cycle, never replaced by a parallel spawn.
+   Changes to the reviewed snapshot during the pass invalidate its verdict.
+5. **Adjudicate.** Independently verify each finding against repository evidence
+   and the severity definitions. Implement accepted unambiguous fixes, validate
+   them within the cycle budget, and continue. Route findings needing a user
+   decision through the Implementor Protocol. Record concise evidence for
+   rejections; rejection never turns a non-CLEAN verdict into CLEAN. Missing,
+   malformed, or failed output gives no coverage; retry next cycle.
+6. **Finish or repeat.** Enter `COMPLETE` only when an agreed CLEAN pass (full,
+   or delta per step 4) covers the final snapshot, including added, deleted, and
+   untracked files; no Critical/High/Medium findings or pending decisions
+   remain; and all fixes are validated as far as tooling permits. Do not re-run
+   an identical pass on unchanged content. Stop as `NOT CONVERGED` when the same
+   rejected material finding recurs in two consecutive cycles or a correction is
+   reversed and then proposed again; report the dispute.
 
 If isolated contexts are unavailable, perform the Critic Contract as a separate
 read-only phase and disclose reduced independence. A history-inheriting child
@@ -210,35 +180,32 @@ cannot run, report the exact command, reason, and remaining uncertainty.
 
 ## Final response
 
-Provide a concise review report in caveman level (see Terse Mode) with these sections:
-
-Lead with outcome (`COMPLETE`, `PAUSED`, or `NOT CONVERGED`), cycle/critic/clean
-counts, and whether critics were isolated or used the fallback.
+Lead with outcome (`COMPLETE`, `PAUSED`, or `NOT CONVERGED`), cycle and critic
+counts (full/delta), whether critics were isolated or used the fallback, whether
+the final coverage came from a full or delta pass, and the model, version, and effort used
+for critics and delegated implementors. Use caveman level (see Terse Mode) for
+these status lines, Scope, and Validation; write Remaining findings and any
+pending decision in normal prose.
 
 ### Scope
 
-- Git scope reviewed
-- Files materially inspected
-- Repository guidance and validation commands used
+- Git scope reviewed, files materially inspected, guidance and validation commands used
 
 ### Changes made
 
-- Each automatic fix, its reason, and affected files
-- Tests or documentation added/updated
+- Each automatic fix, its reason, and affected files; tests or docs added/updated
 
 ### Validation
 
-- Commands run and their results
-- Checks not run, with the reason
+- Commands run and results; checks not run, with the reason
 
 ### Remaining findings
 
 - State `No findings above low severity remain` only when supported; this alone
   does not imply COMPLETE if the critic gate remains unmet
-- Otherwise list unresolved findings, severity, pending decisions or disagreement,
-  and the stopping reason
+- Otherwise list unresolved findings, severity, pending decisions or
+  disagreement, and the stopping reason
 
 ### Low-severity notes
 
-- List only actionable low-severity observations
-- Do not implement low-severity changes unless requested
+- Only actionable low-severity observations; do not implement them unless requested

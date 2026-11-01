@@ -8,7 +8,7 @@ if a `caveman` skill is available, follow its levels instead.
 - **Ultra** (scratch reasoning, notes to self): drop articles, filler, and
   pleasantries; fragments and abbreviations are fine.
 - **Caveman** (critic report, subagent prompts, main-agent status/adjudication
-  notes, final user report): drop articles and filler, keep full words for
+  notes, final-report status lines): drop articles and filler, keep full words for
   technical terms. Short sentences or fragments.
 
 Use ultra only where no one else must parse the text. A subagent's report is
